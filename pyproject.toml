@@ -1,0 +1,9 @@
+[project]
+name = "amap-project"
+version = "0.1.0"
+description = "Personal food recommendation Agent CLI MVP"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
