@@ -7,10 +7,10 @@
 - 可复用 `AgentLoop`
 - OpenAI-compatible `LLMClient`
 - 支持高德 Streamable HTTP 的 `MCPClient`
-- FoodAgent 先通过高德 MCP 检索候选餐厅，再交给 LLM 总结推荐
+- FoodAgent 向 LLM 暴露受限的高德 MCP 工具：`maps_geo`、`maps_around_search`、`maps_search_detail`
 - 餐饮推荐 `FoodAgent`
-- SQLite 用餐 memory
-- CLI 命令：`chat`、`add-meal`、`list-meals`、`search-nearby`
+- SQLite 个人饮食偏好 memory
+- CLI 命令：`chat`、`add-preference`、`list-preferences`、`search-nearby`
 
 ## 快速开始
 
@@ -36,16 +36,16 @@ http://127.0.0.1:8765
 uv run python main.py doctor
 ```
 
-添加一条用餐记录：
+添加一条长期饮食偏好：
 
 ```bash
-uv run python main.py add-meal --restaurant-name "小馆" --cuisine "粤菜" --rating 4.5 --avg-price 90 --comment "安静，适合一个人"
+uv run python main.py add-preference --category scenario --preference "一个人吃饭时偏好安静、出餐稳定的小店" --sentiment like --weight 3
 ```
 
-查看历史记录：
+查看已沉淀的饮食偏好：
 
 ```bash
-uv run python main.py list-meals
+uv run python main.py list-preferences
 ```
 
 手动测试高德周边搜索：
@@ -54,7 +54,7 @@ uv run python main.py list-meals
 uv run python main.py search-nearby --location 国典华园 --radius 1200
 ```
 
-这个命令只用于人工验证 MCP 连通性，会直接调用高德原生 `maps_geo` 和 `maps_around_search`。Agent 对话模式会先用高德 MCP 检索 5-10 个候选餐厅，再把候选集放进 LLM 上下文，由 LLM 输出 1-3 个推荐结果。
+这个命令只用于人工验证 MCP 连通性，会直接调用高德原生 `maps_geo` 和 `maps_around_search`。Agent 对话模式不会在业务层预搜索餐厅，而是把受限工具 schema 交给 LLM，由 LLM 自主决定是否调用地理编码、周边搜索和详情搜索。
 
 ## 配置
 
@@ -90,4 +90,4 @@ AMAP_MCP_MODE=streamable_http
 AMAP_MCP_URL=https://mcp.amap.com/mcp?key=你的高德 key
 ```
 
-没有配置 LLM 时，CLI 会使用本地降级回复，便于先验证 agent-loop、memory 和命令行流程。没有启用 MCP 时，LLM 不会获得高德工具。
+没有配置 LLM 时，CLI 会直接提示模型不可用，不会用本地规则猜测推荐。没有启用 MCP 时，LLM 不会获得高德工具。

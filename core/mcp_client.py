@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import itertools
 import logging
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -15,6 +17,13 @@ from config.settings import Settings
 logger = logging.getLogger(__name__)
 
 
+TOOL_CACHE_TTLS_SECONDS = {
+    "maps_geo": 24 * 60 * 60,
+    "maps_around_search": 20 * 60,
+    "maps_search_detail": 7 * 24 * 60 * 60,
+}
+
+
 class MCPClient:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -22,6 +31,7 @@ class MCPClient:
         self._initialized = False
         self._http_session_id: str | None = None
         self._tools_cache: list[dict[str, Any]] | None = None
+        self._tool_result_cache: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
         logger.info(
             "MCP client initialized: mode=%s endpoint=%s",
             self.settings.amap_mcp_mode,
@@ -44,10 +54,16 @@ class MCPClient:
         if self._tools_cache is not None:
             return self._tools_cache
         logger.info("MCP list_tools start")
+        started = time.perf_counter()
         response = await self._request("tools/list", {})
         tools = response.get("tools", []) if isinstance(response, dict) else []
         tool_names = [tool.get("name", "<unnamed>") for tool in tools if isinstance(tool, dict)]
-        logger.info("MCP list_tools done: count=%s tools=%s", len(tool_names), tool_names)
+        logger.info(
+            "MCP list_tools done: count=%s elapsed_ms=%s tools=%s",
+            len(tool_names),
+            elapsed_ms(started),
+            tool_names,
+        )
         self._tools_cache = tools if isinstance(tools, list) else []
         return self._tools_cache
 
@@ -59,15 +75,26 @@ class MCPClient:
                 arguments,
             )
             return {"content": {"error": "MCP is disabled"}, "isError": True}
-        return await self._call_real_tool(tool_name, arguments)
+        cached = self._get_cached_tool_result(tool_name, arguments)
+        if cached is not None:
+            return cached
+        result = await self._call_real_tool(tool_name, arguments)
+        self._cache_tool_result(tool_name, arguments, result)
+        return result
 
     async def _call_real_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         logger.info("MCP call_tool start: tool=%s args=%s", tool_name, arguments)
+        started = time.perf_counter()
         result = await self._request(
             "tools/call",
             {"name": tool_name, "arguments": arguments},
         )
-        logger.info("MCP call_tool done: tool=%s result=%s", tool_name, summarize_result(result))
+        logger.info(
+            "MCP call_tool done: tool=%s elapsed_ms=%s result=%s",
+            tool_name,
+            elapsed_ms(started),
+            summarize_result(result),
+        )
         return result
 
     async def close(self) -> None:
@@ -75,6 +102,43 @@ class MCPClient:
         self._initialized = False
         self._http_session_id = None
         self._tools_cache = None
+        self._tool_result_cache.clear()
+
+    def _get_cached_tool_result(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any] | None:
+        ttl_seconds = TOOL_CACHE_TTLS_SECONDS.get(tool_name)
+        if not ttl_seconds:
+            return None
+        cache_key = self._tool_cache_key(tool_name, arguments)
+        cached = self._tool_result_cache.get(cache_key)
+        if not cached:
+            return None
+        created_at, result = cached
+        age_seconds = time.monotonic() - created_at
+        if age_seconds > ttl_seconds:
+            self._tool_result_cache.pop(cache_key, None)
+            logger.info(
+                "MCP cache expired: tool=%s age_seconds=%.1f ttl_seconds=%s",
+                tool_name,
+                age_seconds,
+                ttl_seconds,
+            )
+            return None
+        logger.info("MCP cache hit: tool=%s age_seconds=%.1f", tool_name, age_seconds)
+        return copy.deepcopy(result)
+
+    def _cache_tool_result(self, tool_name: str, arguments: dict[str, Any], result: dict[str, Any]) -> None:
+        ttl_seconds = TOOL_CACHE_TTLS_SECONDS.get(tool_name)
+        if not ttl_seconds or result.get("isError"):
+            return
+        cache_key = self._tool_cache_key(tool_name, arguments)
+        self._tool_result_cache[cache_key] = (time.monotonic(), copy.deepcopy(result))
+        logger.info("MCP cache stored: tool=%s ttl_seconds=%s", tool_name, ttl_seconds)
+
+    def _tool_cache_key(self, tool_name: str, arguments: dict[str, Any]) -> tuple[str, str]:
+        return (
+            tool_name,
+            json.dumps(arguments, ensure_ascii=False, sort_keys=True, default=str),
+        )
 
     async def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         mode = self.settings.amap_mcp_mode.lower()
@@ -94,10 +158,14 @@ class MCPClient:
             "params": params,
         }
         logger.info("MCP HTTP request: method=%s id=%s", method, payload["id"])
-        return await asyncio.to_thread(self._post_json_rpc, payload)
+        started = time.perf_counter()
+        result = await asyncio.to_thread(self._post_json_rpc, payload)
+        logger.info("MCP HTTP request done: method=%s id=%s elapsed_ms=%s", method, payload["id"], elapsed_ms(started))
+        return result
 
     async def _initialize_http(self) -> None:
         logger.info("MCP HTTP initialize start")
+        started = time.perf_counter()
         payload = {
             "jsonrpc": "2.0",
             "id": next(self._request_ids),
@@ -117,7 +185,7 @@ class MCPClient:
         }
         await asyncio.to_thread(self._post_json_rpc, initialized_payload)
         self._initialized = True
-        logger.info("MCP HTTP initialized notification sent")
+        logger.info("MCP HTTP initialized notification sent: elapsed_ms=%s", elapsed_ms(started))
 
     def _post_json_rpc(self, payload: dict[str, Any]) -> dict[str, Any]:
         method = payload.get("method", "<unknown>")
@@ -188,6 +256,10 @@ def mask_secret(value: str | None) -> str:
     if len(value) <= 8:
         return "***"
     return f"{value[:4]}...{value[-4:]}"
+
+
+def elapsed_ms(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)
 
 
 def mask_url_secret(url: str) -> str:

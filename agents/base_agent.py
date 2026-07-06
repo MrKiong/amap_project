@@ -33,6 +33,9 @@ class BaseAgent(ABC):
     async def should_expose_mcp_tools(self) -> bool:
         return False
 
+    async def allowed_mcp_tool_names(self) -> set[str] | None:
+        return None
+
     async def should_finish(self, messages: list[Message]) -> bool:
         return bool(messages and messages[-1].role == "assistant" and messages[-1].content.strip())
 

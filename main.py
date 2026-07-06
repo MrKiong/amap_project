@@ -12,7 +12,7 @@ from config.settings import get_settings
 from core.agent_loop import AgentLoop
 from core.llm_client import LLMClient
 from core.mcp_client import MCPClient, extract_json_text_payload, mask_url_secret
-from storage.repositories import MealRecord
+from storage.repositories import PreferenceRecord
 from web_app import AgentWebServer
 
 
@@ -25,6 +25,12 @@ def build_runtime() -> tuple[FoodMemory, AgentLoop, MCPClient]:
     agent = FoodAgent(memory)
     loop = AgentLoop(agent=agent, llm_client=llm_client, mcp_client=mcp_client)
     return memory, loop, mcp_client
+
+
+def build_memory() -> FoodMemory:
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    return FoodMemory(settings.database_path)
 
 
 async def chat_command(_args: argparse.Namespace) -> None:
@@ -43,39 +49,29 @@ async def chat_command(_args: argparse.Namespace) -> None:
         await mcp_client.close()
 
 
-def add_meal_command(args: argparse.Namespace) -> None:
-    memory, _agent_loop, _mcp_client = build_runtime()
-    record = MealRecord(
-        restaurant_name=args.restaurant_name,
-        location=args.location or "",
-        cuisine=args.cuisine or "",
-        avg_price=args.avg_price,
-        rating=args.rating,
-        dishes=args.dishes or "",
-        scenario=args.scenario or "",
-        companions=args.companions or "",
-        comment=args.comment or "",
-        pros=args.pros or "",
-        cons=args.cons or "",
-        revisit_willingness=args.revisit_willingness or "",
+def add_preference_command(args: argparse.Namespace) -> None:
+    memory = build_memory()
+    record = PreferenceRecord(
+        category=args.category,
+        preference=args.preference,
+        sentiment=args.sentiment,
+        weight=args.weight,
+        source_note=args.source_note or "",
     )
-    meal_id = memory.add_meal(record)
-    print(f"已添加用餐记录 #{meal_id}: {record.restaurant_name}")
+    preference_id = memory.add_preference(record)
+    print(f"已添加饮食偏好 #{preference_id}: [{record.category}/{record.sentiment}] {record.preference}")
 
 
-def list_meals_command(args: argparse.Namespace) -> None:
-    memory, _agent_loop, _mcp_client = build_runtime()
-    meals = memory.recent_meals(limit=args.limit)
-    if not meals:
-        print("暂无用餐记录。")
+def list_preferences_command(args: argparse.Namespace) -> None:
+    memory = build_memory()
+    preferences = memory.list_preferences(limit=args.limit)
+    if not preferences:
+        print("暂无饮食偏好。")
         return
-    for meal in meals:
-        rating = meal.get("rating")
-        price = meal.get("avg_price")
+    for item in preferences:
         print(
-            f"#{meal['id']} {meal['restaurant_name']} | {meal.get('cuisine') or '未标注'} | "
-            f"评分 {rating if rating is not None else '-'} | 人均 {price if price is not None else '-'} | "
-            f"{meal.get('comment') or ''}"
+            f"#{item['id']} [{item.get('category')}/{item.get('sentiment')}] "
+            f"weight={item.get('weight')} | {item.get('preference')}"
         )
 
 
@@ -159,24 +155,22 @@ def build_parser() -> argparse.ArgumentParser:
     chat = subparsers.add_parser("chat", help="进入多轮餐饮推荐对话")
     chat.set_defaults(func=lambda args: asyncio.run(chat_command(args)))
 
-    add_meal = subparsers.add_parser("add-meal", help="添加一条历史用餐记录")
-    add_meal.add_argument("--restaurant-name", required=True)
-    add_meal.add_argument("--location")
-    add_meal.add_argument("--cuisine")
-    add_meal.add_argument("--avg-price", type=float)
-    add_meal.add_argument("--rating", type=float)
-    add_meal.add_argument("--dishes")
-    add_meal.add_argument("--scenario")
-    add_meal.add_argument("--companions")
-    add_meal.add_argument("--comment")
-    add_meal.add_argument("--pros")
-    add_meal.add_argument("--cons")
-    add_meal.add_argument("--revisit-willingness")
-    add_meal.set_defaults(func=add_meal_command)
+    add_preference = subparsers.add_parser("add-preference", help="添加一条长期饮食偏好")
+    add_preference.add_argument("--category", required=True, help="例如 cuisine/taste/scenario/budget/avoidance")
+    add_preference.add_argument("--preference", required=True, help="偏好内容，例如 不喜欢排队超过15分钟")
+    add_preference.add_argument(
+        "--sentiment",
+        default="like",
+        choices=["like", "avoid", "neutral", "rule"],
+        help="偏好倾向",
+    )
+    add_preference.add_argument("--weight", type=int, default=1, help="权重，越高越重要")
+    add_preference.add_argument("--source-note", help="可选来源说明")
+    add_preference.set_defaults(func=add_preference_command)
 
-    list_meals = subparsers.add_parser("list-meals", help="查看最近的用餐记录")
-    list_meals.add_argument("--limit", type=int, default=20)
-    list_meals.set_defaults(func=list_meals_command)
+    list_preferences = subparsers.add_parser("list-preferences", help="查看已沉淀的饮食偏好")
+    list_preferences.add_argument("--limit", type=int, default=20)
+    list_preferences.set_defaults(func=list_preferences_command)
 
     search = subparsers.add_parser("search-nearby", help="通过 MCP 搜索附近餐厅")
     search.add_argument("--location", required=True)

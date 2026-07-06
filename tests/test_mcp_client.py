@@ -87,3 +87,36 @@ class MCPClientTest(unittest.TestCase):
 
         self.assertEqual(schema.name, "maps_around_search")
         self.assertEqual(schema.to_openai_tool()["function"]["parameters"]["required"], ["keywords"])
+
+    def test_call_tool_uses_ttl_cache_for_cacheable_amap_tools(self) -> None:
+        class CountingMCPClient(MCPClient):
+            def __init__(self, settings: Settings):
+                super().__init__(settings)
+                self.calls = 0
+
+            async def _call_real_tool(self, tool_name: str, arguments: dict) -> dict:
+                self.calls += 1
+                return {"content": {"calls": self.calls, "arguments": dict(arguments)}}
+
+        async def run_case() -> tuple[int, dict]:
+            settings = Settings(
+                log_level="INFO",
+                deepseek_api_key="",
+                deepseek_base_url="",
+                deepseek_model="deepseek-v4",
+                amap_mcp_mode="streamable_http",
+                amap_mcp_url="https://mcp.amap.com/mcp",
+                amap_maps_api_key="test-key",
+                database_url="sqlite:///data/test.sqlite",
+            )
+            client = CountingMCPClient(settings)
+            first = await client.call_tool("maps_geo", {"city": "北京", "address": "国典华园"})
+            first["content"]["mutated"] = True
+            second = await client.call_tool("maps_geo", {"address": "国典华园", "city": "北京"})
+            return client.calls, second
+
+        calls, second = asyncio.run(run_case())
+
+        self.assertEqual(calls, 1)
+        self.assertEqual(second["content"]["calls"], 1)
+        self.assertNotIn("mutated", second["content"])

@@ -15,3 +15,23 @@ class WebAppTest(unittest.TestCase):
         args = build_parser().parse_args(["web"])
         self.assertEqual(args.host, "127.0.0.1")
         self.assertEqual(args.port, 8765)
+
+    def test_add_preference_parser(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "add-preference",
+                "--category",
+                "scenario",
+                "--preference",
+                "一个人吃饭偏好安静小店",
+                "--sentiment",
+                "like",
+                "--weight",
+                "3",
+            ]
+        )
+
+        self.assertEqual(args.category, "scenario")
+        self.assertEqual(args.preference, "一个人吃饭偏好安静小店")
+        self.assertEqual(args.sentiment, "like")
+        self.assertEqual(args.weight, 3)

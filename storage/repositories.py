@@ -8,34 +8,27 @@ from storage.db import connect, init_db
 
 
 @dataclass(frozen=True)
-class MealRecord:
-    restaurant_name: str
-    location: str = ""
-    cuisine: str = ""
-    avg_price: float | None = None
-    rating: float | None = None
-    dishes: str = ""
-    scenario: str = ""
-    companions: str = ""
-    comment: str = ""
-    pros: str = ""
-    cons: str = ""
-    revisit_willingness: str = ""
+class PreferenceRecord:
+    category: str
+    preference: str
+    sentiment: str = "like"
+    weight: int = 1
+    source_note: str = ""
 
 
-class MealRepository:
+class PreferenceRepository:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         init_db(db_path)
 
-    def add(self, record: MealRecord) -> int:
+    def add(self, record: PreferenceRecord) -> int:
         fields = record.__dataclass_fields__.keys()
         columns = ", ".join(fields)
         placeholders = ", ".join(f":{field}" for field in fields)
         connection = connect(self.db_path)
         try:
             cursor = connection.execute(
-                f"INSERT INTO meals ({columns}) VALUES ({placeholders})",
+                f"INSERT INTO dietary_preferences ({columns}) VALUES ({placeholders})",
                 record.__dict__,
             )
             connection.commit()
@@ -47,58 +40,44 @@ class MealRepository:
         connection = connect(self.db_path)
         try:
             rows = connection.execute(
-                "SELECT * FROM meals ORDER BY created_at DESC, id DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-        finally:
-            connection.close()
-        return [dict(row) for row in rows]
-
-    def by_cuisine(self, cuisine: str, limit: int = 20) -> list[dict[str, Any]]:
-        connection = connect(self.db_path)
-        try:
-            rows = connection.execute(
                 """
-                SELECT * FROM meals
-                WHERE cuisine LIKE ?
-                ORDER BY created_at DESC, id DESC
-                LIMIT ?
-                """,
-                (f"%{cuisine}%", limit),
-            ).fetchall()
-        finally:
-            connection.close()
-        return [dict(row) for row in rows]
-
-    def by_min_rating(self, rating: float, limit: int = 20) -> list[dict[str, Any]]:
-        connection = connect(self.db_path)
-        try:
-            rows = connection.execute(
-                """
-                SELECT * FROM meals
-                WHERE rating >= ?
-                ORDER BY rating DESC, created_at DESC, id DESC
-                LIMIT ?
-                """,
-                (rating, limit),
-            ).fetchall()
-        finally:
-            connection.close()
-        return [dict(row) for row in rows]
-
-    def pitfalls(self, limit: int = 20) -> list[dict[str, Any]]:
-        connection = connect(self.db_path)
-        try:
-            rows = connection.execute(
-                """
-                SELECT * FROM meals
-                WHERE (rating IS NOT NULL AND rating <= 2.5)
-                   OR revisit_willingness IN ('no', 'false', '不愿意', '否')
-                   OR cons != ''
-                ORDER BY created_at DESC, id DESC
+                SELECT * FROM dietary_preferences
+                ORDER BY weight DESC, updated_at DESC, id DESC
                 LIMIT ?
                 """,
                 (limit,),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [dict(row) for row in rows]
+
+    def by_category(self, category: str, limit: int = 20) -> list[dict[str, Any]]:
+        connection = connect(self.db_path)
+        try:
+            rows = connection.execute(
+                """
+                SELECT * FROM dietary_preferences
+                WHERE category = ?
+                ORDER BY weight DESC, updated_at DESC, id DESC
+                LIMIT ?
+                """,
+                (category, limit),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [dict(row) for row in rows]
+
+    def by_sentiment(self, sentiment: str, limit: int = 20) -> list[dict[str, Any]]:
+        connection = connect(self.db_path)
+        try:
+            rows = connection.execute(
+                """
+                SELECT * FROM dietary_preferences
+                WHERE sentiment = ?
+                ORDER BY weight DESC, updated_at DESC, id DESC
+                LIMIT ?
+                """,
+                (sentiment, limit),
             ).fetchall()
         finally:
             connection.close()
