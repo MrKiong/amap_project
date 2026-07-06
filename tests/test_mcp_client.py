@@ -88,6 +88,30 @@ class MCPClientTest(unittest.TestCase):
         self.assertEqual(schema.name, "maps_around_search")
         self.assertEqual(schema.to_openai_tool()["function"]["parameters"]["required"], ["keywords"])
 
+    def test_tool_schema_can_emit_strict_openai_function_tool(self) -> None:
+        schema = ToolSchema.from_mcp_tool(
+            {
+                "name": "maps_around_search",
+                "description": "周边搜",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "keywords": {"type": "string"},
+                        "radius": {"type": "string"},
+                    },
+                    "required": ["keywords"],
+                },
+            }
+        )
+
+        tool = schema.to_openai_tool(strict=True)
+        parameters = tool["function"]["parameters"]
+
+        self.assertTrue(tool["function"]["strict"])
+        self.assertFalse(parameters["additionalProperties"])
+        self.assertEqual(parameters["required"], ["keywords", "radius"])
+        self.assertEqual(parameters["properties"]["radius"]["type"], ["string", "null"])
+
     def test_call_tool_uses_ttl_cache_for_cacheable_amap_tools(self) -> None:
         class CountingMCPClient(MCPClient):
             def __init__(self, settings: Settings):

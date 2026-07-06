@@ -1,26 +1,38 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
 
 from config.settings import Settings
-from core.llm_client import LLMClient
+from core.llm_client import LLMClient, LLMResponse
+from core.message import Message
 
 
 class LLMClientTest(unittest.TestCase):
-    def test_non_json_success_response_raises_diagnostic_runtime_error(self) -> None:
-        class EmptyResponse:
-            status = 200
-            headers = {"Content-Type": "text/plain"}
+    def test_chat_uses_openai_sdk_chat_completions(self) -> None:
+        class FakeMessage:
+            content = "ok"
+            tool_calls = []
 
-            def __enter__(self):  # type: ignore[no-untyped-def]
-                return self
+        class FakeChoice:
+            message = FakeMessage()
 
-            def __exit__(self, exc_type, exc, tb):  # type: ignore[no-untyped-def]
-                return False
+        class FakeCompletion:
+            choices = [FakeChoice()]
 
-            def read(self) -> bytes:
-                return b""
+            def model_dump(self, mode: str = "json") -> dict:  # noqa: ARG002
+                return {"choices": [{"message": {"content": "ok"}}]}
+
+        class FakeCompletions:
+            def __init__(self) -> None:
+                self.kwargs = {}
+
+            def create(self, **kwargs):  # type: ignore[no-untyped-def]
+                self.kwargs = kwargs
+                return FakeCompletion()
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.chat = type("Chat", (), {"completions": FakeCompletions()})()
 
         settings = Settings(
             log_level="INFO",
@@ -32,7 +44,14 @@ class LLMClientTest(unittest.TestCase):
             amap_maps_api_key="",
             database_url="sqlite:///data/test.sqlite",
         )
+        client = LLMClient(settings)
+        fake_client = FakeClient()
+        client._client = fake_client  # type: ignore[assignment]
 
-        with patch("urllib.request.urlopen", return_value=EmptyResponse()):
-            with self.assertRaisesRegex(RuntimeError, "not valid JSON"):
-                LLMClient(settings)._post_chat_completions({"model": "test-model", "messages": []})
+        response = client._create_chat_completion(
+            {"model": "test-model", "messages": [Message(role="user", content="hi").to_openai()]}
+        )
+
+        self.assertIsInstance(response, LLMResponse)
+        self.assertEqual(response.content, "ok")
+        self.assertEqual(fake_client.chat.completions.kwargs["model"], "test-model")

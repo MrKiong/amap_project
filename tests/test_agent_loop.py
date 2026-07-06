@@ -107,14 +107,16 @@ class AgentLoopTest(unittest.TestCase):
             def __init__(self, settings: Settings):
                 super().__init__(settings)
                 self.last_user_content = ""
+                self.last_messages = []
                 self.tool_names: list[str] | None = None
 
             async def chat(self, messages, tools=None):  # type: ignore[no-untyped-def]
                 self.last_user_content = messages[-1].content
+                self.last_messages = messages
                 self.tool_names = [tool.name for tool in tools or []]
                 return LLMResponse(content="ok")
 
-        async def run_case() -> tuple[str, list[str] | None]:
+        async def run_case() -> tuple[str, list, list[str] | None]:
             with tempfile.TemporaryDirectory() as temp_dir:
                 settings = Settings(
                     log_level="INFO",
@@ -134,13 +136,97 @@ class AgentLoopTest(unittest.TestCase):
                     mcp_client=FakeMCPClient(settings),
                 )
                 await agent_loop.run("国典华园附近吃什么")
-                return llm_client.last_user_content, llm_client.tool_names
+                return llm_client.last_user_content, llm_client.last_messages, llm_client.tool_names
 
-        last_user_content, tool_names = asyncio.run(run_case())
+        last_user_content, last_messages, tool_names = asyncio.run(run_case())
 
         self.assertEqual(tool_names, ["maps_geo", "maps_around_search", "maps_search_detail"])
         self.assertNotIn("restaurant_search", last_user_content)
-        self.assertIn("tool_policy", last_user_content)
+        self.assertEqual(last_user_content, "国典华园附近吃什么")
+        self.assertIn("tool_policy", last_messages[1].content)
+
+    def test_agent_loop_runs_openai_style_tool_call_roundtrip(self) -> None:
+        class ToolCallingLLMClient(LLMClient):
+            def __init__(self, settings: Settings):
+                super().__init__(settings)
+                self.calls = 0
+                self.saw_tool_result = False
+
+            async def chat(self, messages, tools=None):  # type: ignore[no-untyped-def]
+                self.calls += 1
+                if self.calls == 1:
+                    return LLMResponse(
+                        content="",
+                        tool_calls=[
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "maps_geo",
+                                    "arguments": '{"address":"百子湾地铁站","city":null}',
+                                },
+                            }
+                        ],
+                    )
+                self.saw_tool_result = any(message.role == "tool" for message in messages)
+                return LLMResponse(content="ok")
+
+        class CapturingMCPClient(MCPClient):
+            def __init__(self, settings: Settings):
+                super().__init__(settings)
+                self.last_tool_name = ""
+                self.last_arguments = {}
+
+            async def list_tools(self) -> list[dict]:
+                return [
+                    {
+                        "name": "maps_geo",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "address": {"type": "string"},
+                                "city": {"type": "string"},
+                            },
+                            "required": ["address"],
+                        },
+                    }
+                ]
+
+            async def call_tool(self, tool_name: str, arguments: dict) -> dict:
+                self.last_tool_name = tool_name
+                self.last_arguments = arguments
+                return {"content": {"location": "116.0,39.0"}}
+
+        async def run_case() -> tuple[str, ToolCallingLLMClient, CapturingMCPClient, list]:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                settings = Settings(
+                    log_level="INFO",
+                    llm_api_key="x",
+                    llm_base_url="https://example.invalid/v1",
+                    llm_model="test-model",
+                    amap_mcp_mode="streamable_http",
+                    amap_mcp_url="https://mcp.amap.com/mcp",
+                    amap_maps_api_key="test-key",
+                    database_url=f"sqlite:///{Path(temp_dir) / 'memory.sqlite'}",
+                )
+                memory = FoodMemory(settings.database_path)
+                llm_client = ToolCallingLLMClient(settings)
+                mcp_client = CapturingMCPClient(settings)
+                agent_loop = AgentLoop(
+                    agent=FoodAgent(memory),
+                    llm_client=llm_client,
+                    mcp_client=mcp_client,
+                )
+                answer = await agent_loop.run("公司附近吃什么")
+                return answer, llm_client, mcp_client, agent_loop.messages
+
+        answer, llm_client, mcp_client, history = asyncio.run(run_case())
+
+        self.assertEqual(answer, "ok")
+        self.assertTrue(llm_client.saw_tool_result)
+        self.assertEqual(mcp_client.last_tool_name, "maps_geo")
+        self.assertEqual(mcp_client.last_arguments, {"address": "百子湾地铁站"})
+        self.assertEqual([message.role for message in history], ["user", "assistant"])
 
     def test_agent_loop_trims_message_history(self) -> None:
         class CapturingLLMClient(LLMClient):
@@ -173,4 +259,5 @@ class AgentLoopTest(unittest.TestCase):
         messages = asyncio.run(run_case())
 
         self.assertLessEqual(len(messages), 5)
-        self.assertEqual(messages[0].role, "system")
+        self.assertLessEqual(len(messages), 4)
+        self.assertNotIn("system", [message.role for message in messages])

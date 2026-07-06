@@ -53,24 +53,14 @@ class AgentLoop:
         logger.info("AgentLoop tools ready: count=%s elapsed_ms=%s", len(tools), elapsed_ms(started))
         system_prompt = await self.agent.build_system_prompt()
 
-        if not self.messages:
-            self.messages.append(Message(role="system", content=system_prompt))
-        self.messages.append(
-            Message(
-                role="user",
-                content=(
-                    f"{user_input}\n\n"
-                    f"Agent context JSON:\n{json.dumps(context, ensure_ascii=False, default=str)}"
-                ),
-            )
-        )
-        self._trim_messages()
+        user_message = Message(role="user", content=user_input)
+        turn_messages = self._build_turn_messages(system_prompt, context, user_message)
 
         tool_results: list[dict[str, Any]] = []
         try:
             for round_index in range(self.max_tool_rounds + 1):
                 started = time.perf_counter()
-                response = await self.llm_client.chat(self.messages, tools=tools)
+                response = await self.llm_client.chat(turn_messages, tools=tools)
                 logger.info(
                     "AgentLoop LLM round done: round=%s elapsed_ms=%s tool_calls=%s content_chars=%s",
                     round_index + 1,
@@ -83,9 +73,9 @@ class AgentLoop:
                     content=response.content,
                     tool_calls=response.tool_calls,
                 )
-                self.messages.append(assistant_message)
-                self._trim_messages()
+                turn_messages.append(assistant_message)
                 if not response.tool_calls:
+                    self._remember_turn(user_message, Message(role="assistant", content=response.content))
                     logger.info("AgentLoop run done: elapsed_ms=%s", elapsed_ms(run_started))
                     return response.content
 
@@ -98,14 +88,13 @@ class AgentLoop:
                         tool_call.get("id"),
                     )
                     tool_results.append(tool_result)
-                    self.messages.append(
+                    turn_messages.append(
                         Message(
                             role="tool",
                             content=json.dumps(tool_result, ensure_ascii=False, default=str),
                             tool_call_id=tool_call.get("id"),
                         )
                     )
-                    self._trim_messages()
             logger.info(
                 "AgentLoop reached max_tool_rounds=%s; using fallback response with tool_results_count=%s",
                 self.max_tool_rounds,
@@ -131,7 +120,7 @@ class AgentLoop:
             arguments = raw_arguments
         if not tool_name:
             raise ValueError(f"Invalid tool call without name: {tool_call}")
-        return await self.mcp_client.call_tool(tool_name, arguments)
+        return await self.mcp_client.call_tool(tool_name, clean_tool_arguments(arguments))
 
     async def _fallback_tool_results(self, context: dict[str, Any]) -> list[dict[str, Any]]:
         return []
@@ -157,21 +146,44 @@ class AgentLoop:
             tools.extend(ToolSchema.from_mcp_tool(tool) for tool in mcp_tools)
         return tools
 
+    def _build_turn_messages(
+        self,
+        system_prompt: str,
+        context: dict[str, Any],
+        user_message: Message,
+    ) -> list[Message]:
+        context_message = Message(
+            role="system",
+            content=(
+                "Current turn runtime context. This applies only to the current user request "
+                "and has higher priority than conversation history.\n"
+                f"{json.dumps(context, ensure_ascii=False, default=str)}"
+            ),
+        )
+        return [
+            Message(role="system", content=system_prompt),
+            context_message,
+            *self.messages,
+            user_message,
+        ]
+
+    def _remember_turn(self, user_message: Message, assistant_message: Message) -> None:
+        self.messages.extend([user_message, assistant_message])
+        self._trim_messages()
+
     def _trim_messages(self) -> None:
         if self.max_message_history <= 0:
             return
-        system_messages = [message for message in self.messages if message.role == "system"][:1]
-        non_system_messages = [message for message in self.messages if message.role != "system"]
-        if len(non_system_messages) <= self.max_message_history:
+        if len(self.messages) <= self.max_message_history:
             return
 
-        trimmed = non_system_messages[-self.max_message_history :]
+        trimmed = self.messages[-self.max_message_history :]
         while trimmed and trimmed[0].role == "tool":
             trimmed.pop(0)
-        dropped = len(non_system_messages) - len(trimmed)
-        self.messages = system_messages + trimmed
+        dropped = len(self.messages) - len(trimmed)
+        self.messages = trimmed
         logger.info(
-            "AgentLoop message window trimmed: kept_non_system=%s dropped=%s",
+            "AgentLoop message window trimmed: kept=%s dropped=%s",
             len(trimmed),
             dropped,
         )
@@ -179,3 +191,9 @@ class AgentLoop:
 
 def elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
+
+
+def clean_tool_arguments(arguments: Any) -> dict[str, Any]:
+    if not isinstance(arguments, dict):
+        return {}
+    return {key: value for key, value in arguments.items() if value is not None}
