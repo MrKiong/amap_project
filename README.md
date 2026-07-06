@@ -1,95 +1,46 @@
 # amap_project
 
-个人餐饮推荐 Agent 的 CLI MVP。
+个人餐饮推荐 Agent。目标不是做通用点评搜索，而是把个人偏好、当前用餐场景和地图检索结果放在同一个对话流程里，让模型自己决定是否查地点、查周边、查详情。
 
-当前版本实现：
+## 当前状态
 
-- 可复用 `AgentLoop`
-- OpenAI-compatible `LLMClient`
-- 支持高德 Streamable HTTP 的 `MCPClient`
-- FoodAgent 向 LLM 暴露受限的高德 MCP 工具：`maps_geo`、`maps_around_search`、`maps_search_detail`
-- 餐饮推荐 `FoodAgent`
-- SQLite 个人饮食偏好 memory
-- CLI 命令：`chat`、`add-preference`、`list-preferences`、`search-nearby`
+- LLM 接入使用 OpenAI-compatible Chat Completions。
+- 地图能力通过高德 MCP 接入。
+- FoodAgent 只向模型暴露三个地图工具：`maps_geo`、`maps_around_search`、`maps_search_detail`。
+- 个人记忆以 SQLite 保存长期饮食偏好，不记录具体餐厅流水账。
+- CLI 和本地 Web 共用同一套 AgentLoop。
 
-## 快速开始
+## 运行入口
 
-```bash
-uv run python main.py chat
-```
+- `uv run python main.py chat`
+- `uv run python main.py web`
+- `uv run python main.py doctor`
+- `uv run python main.py add-preference`
+- `uv run python main.py list-preferences`
+- `uv run python main.py search-nearby`
 
-启动本地 Web 测试页面：
+Windows 下也可以直接使用 `start_cli.bat`，启动时选择 CLI 或 Web。
 
-```bash
-uv run python main.py web
-```
+## 主要结构
 
-然后打开：
+- `agents/food_agent/`：餐饮 Agent 的 prompt、用户画像、上下文和 memory 封装。
+- `core/agent_loop.py`：对话循环、工具调用循环和消息窗口。
+- `core/llm_client.py`：OpenAI-compatible LLM 请求。
+- `core/mcp_client.py`：高德 MCP 客户端、工具缓存和响应解析。
+- `storage/`：SQLite schema 和 repository。
+- `web_app.py`：本地 Web 测试页面。
 
-```text
-http://127.0.0.1:8765
-```
+## MCP 模式
 
-检查当前是否真的会调用高德 MCP：
+`AMAP_MCP_MODE` 只有两个有效状态：
 
-```bash
-uv run python main.py doctor
-```
+- `disabled`：不连接高德 MCP，不向模型暴露地图工具。
+- `streamable_http`：连接高德 MCP，并向模型暴露受限工具。
 
-添加一条长期饮食偏好：
+高德 key 只从 `AMAP_MAPS_API_KEY` 读取。`AMAP_MCP_URL` 保持为 MCP 服务地址。
 
-```bash
-uv run python main.py add-preference --category scenario --preference "一个人吃饭时偏好安静、出餐稳定的小店" --sentiment like --weight 3
-```
+## 设计取舍
 
-查看已沉淀的饮食偏好：
+业务层不预搜索、不手写餐厅推荐规则。Agent 只提供稳定上下文、受限工具和必要约束，具体是否调用工具、用什么关键词、如何取舍候选餐厅交给模型完成。
 
-```bash
-uv run python main.py list-preferences
-```
-
-手动测试高德周边搜索：
-
-```bash
-uv run python main.py search-nearby --location 国典华园 --radius 1200
-```
-
-这个命令只用于人工验证 MCP 连通性，会直接调用高德原生 `maps_geo` 和 `maps_around_search`。Agent 对话模式不会在业务层预搜索餐厅，而是把受限工具 schema 交给 LLM，由 LLM 自主决定是否调用地理编码、周边搜索和详情搜索。
-
-## 配置
-
-复制 `.env.example` 为 `.env`，按需填写：
-
-```env
-LOG_LEVEL=INFO
-LLM_API_KEY=
-LLM_BASE_URL=
-LLM_MODEL=deepseek-v4-flash
-AMAP_MCP_MODE=disabled
-AMAP_MCP_URL=https://mcp.amap.com/mcp
-AMAP_MAPS_API_KEY=
-DATABASE_URL=sqlite:///data/food_memory.sqlite
-```
-
-LLM 配置使用 OpenAI-compatible 接口：`LLM_API_KEY` 填 key，`LLM_BASE_URL` 填 API base url，`LLM_MODEL` 填实际请求里的模型名。
-
-日志等级由 `LOG_LEVEL` 控制，常用值：`DEBUG`、`INFO`、`WARNING`、`ERROR`。默认 `INFO` 会打印 MCP 是否启用、调用了哪个工具、HTTP 状态、响应概要等关键信息，并自动脱敏 URL 中的 key。
-
-高德官方推荐以 Streamable HTTP 方式接入 MCP 服务。启用时可以这样配置：
-
-```env
-AMAP_MCP_MODE=streamable_http
-AMAP_MCP_URL=https://mcp.amap.com/mcp
-AMAP_MAPS_API_KEY=你的高德 key
-```
-
-如果日志里出现 `MCP list_tools skipped: mode=disabled`，说明当前没有调用高德，也不会向 LLM 暴露 MCP 工具。把 `.env` 中的 `AMAP_MCP_MODE` 改成 `streamable_http` 并重启 CLI/Web 服务即可。
-
-也兼容直接把 key 写在 URL 中：
-
-```env
-AMAP_MCP_MODE=streamable_http
-AMAP_MCP_URL=https://mcp.amap.com/mcp?key=你的高德 key
-```
-
-没有配置 LLM 时，CLI/Web 会直接提示模型不可用，不会用本地规则猜测推荐。没有启用 MCP 时，LLM 不会获得高德工具。
+LLM 未配置或调用失败时，不用本地规则猜测推荐，直接返回不可用信息。

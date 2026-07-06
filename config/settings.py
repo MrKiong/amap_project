@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import quote_plus
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -56,18 +56,8 @@ class Settings:
         if not self.amap_maps_api_key:
             return self.amap_mcp_url
 
-        parts = urlsplit(self.amap_mcp_url)
-        query = dict(parse_qsl(parts.query, keep_blank_values=True))
-        query.setdefault("key", self.amap_maps_api_key)
-        return urlunsplit(
-            (
-                parts.scheme,
-                parts.netloc,
-                parts.path,
-                urlencode(query),
-                parts.fragment,
-            )
-        )
+        separator = "&" if "?" in self.amap_mcp_url else "?"
+        return f"{self.amap_mcp_url}{separator}key={quote_plus(self.amap_maps_api_key)}"
 
 
 def get_settings() -> Settings:
