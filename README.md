@@ -62,14 +62,16 @@ uv run python main.py search-nearby --location 国典华园 --radius 1200
 
 ```env
 LOG_LEVEL=INFO
-DEEPSEEK_API_KEY=
-DEEPSEEK_BASE_URL=
-DEEPSEEK_MODEL=deepseek-v4-flash
+LLM_API_KEY=
+LLM_BASE_URL=
+LLM_MODEL=deepseek-v4-flash
 AMAP_MCP_MODE=disabled
 AMAP_MCP_URL=https://mcp.amap.com/mcp
 AMAP_MAPS_API_KEY=
 DATABASE_URL=sqlite:///data/food_memory.sqlite
 ```
+
+LLM 配置使用 OpenAI-compatible 接口：`LLM_API_KEY` 填 key，`LLM_BASE_URL` 填 API base url，`LLM_MODEL` 填实际请求里的模型名。
 
 日志等级由 `LOG_LEVEL` 控制，常用值：`DEBUG`、`INFO`、`WARNING`、`ERROR`。默认 `INFO` 会打印 MCP 是否启用、调用了哪个工具、HTTP 状态、响应概要等关键信息，并自动脱敏 URL 中的 key。
 
@@ -90,4 +92,4 @@ AMAP_MCP_MODE=streamable_http
 AMAP_MCP_URL=https://mcp.amap.com/mcp?key=你的高德 key
 ```
 
-没有配置 LLM 时，CLI 会直接提示模型不可用，不会用本地规则猜测推荐。没有启用 MCP 时，LLM 不会获得高德工具。
+没有配置 LLM 时，CLI/Web 会直接提示模型不可用，不会用本地规则猜测推荐。没有启用 MCP 时，LLM 不会获得高德工具。

@@ -204,7 +204,7 @@ INDEX_HTML = """<!doctype html>
     <main>
       <section class="chat" aria-label="Agent 对话">
         <div class="messages" id="messages">
-          <div class="msg agent">可以直接输入用餐需求。我会走当前项目里的 AgentLoop、memory 和 MCP 配置；未配置 LLM 时会使用本地降级推荐。</div>
+          <div class="msg agent">可以直接输入用餐需求。我会走当前项目里的 AgentLoop、memory 和 MCP 配置；未配置 LLM 时会直接提示模型不可用。</div>
         </div>
         <form class="composer" id="form">
           <textarea id="input" placeholder="例如：明天中午我在国典华园附近，一个人，预算100左右，不想吃太辣，推荐一家。"></textarea>

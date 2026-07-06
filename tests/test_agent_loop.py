@@ -26,9 +26,9 @@ class AgentLoopTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp_dir:
                 settings = Settings(
                     log_level="INFO",
-                    deepseek_api_key="",
-                    deepseek_base_url="",
-                    deepseek_model="deepseek-v4",
+                    llm_api_key="",
+                    llm_base_url="",
+                    llm_model="test-model",
                     amap_mcp_mode="disabled",
                     amap_mcp_url="",
                     amap_maps_api_key="",
@@ -44,7 +44,7 @@ class AgentLoopTest(unittest.TestCase):
 
         answer = asyncio.run(run_case())
         self.assertIn("当前 LLM 未配置", answer)
-        self.assertIn("DEEPSEEK_API_KEY", answer)
+        self.assertIn("LLM_API_KEY", answer)
         self.assertNotIn("首推", answer)
 
     def test_llm_request_failure_does_not_use_rule_recommendation(self) -> None:
@@ -56,9 +56,9 @@ class AgentLoopTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp_dir:
                 settings = Settings(
                     log_level="INFO",
-                    deepseek_api_key="x",
-                    deepseek_base_url="https://example.invalid/v1",
-                    deepseek_model="bad-model",
+                    llm_api_key="x",
+                    llm_base_url="https://example.invalid/v1",
+                    llm_model="bad-model",
                     amap_mcp_mode="disabled",
                     amap_mcp_url="",
                     amap_maps_api_key="",
@@ -118,9 +118,9 @@ class AgentLoopTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp_dir:
                 settings = Settings(
                     log_level="INFO",
-                    deepseek_api_key="x",
-                    deepseek_base_url="https://example.invalid/v1",
-                    deepseek_model="test-model",
+                    llm_api_key="x",
+                    llm_base_url="https://example.invalid/v1",
+                    llm_model="test-model",
                     amap_mcp_mode="streamable_http",
                     amap_mcp_url="https://mcp.amap.com/mcp",
                     amap_maps_api_key="test-key",
@@ -151,9 +151,9 @@ class AgentLoopTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp_dir:
                 settings = Settings(
                     log_level="INFO",
-                    deepseek_api_key="x",
-                    deepseek_base_url="https://example.invalid/v1",
-                    deepseek_model="test-model",
+                    llm_api_key="x",
+                    llm_base_url="https://example.invalid/v1",
+                    llm_model="test-model",
                     amap_mcp_mode="disabled",
                     amap_mcp_url="",
                     amap_maps_api_key="",

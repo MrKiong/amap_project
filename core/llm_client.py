@@ -39,12 +39,12 @@ class LLMClient:
     ) -> LLMResponse:
         if not self.is_configured:
             raise LLMConfigurationError(
-                "DeepSeek/OpenAI-compatible API is not configured. Set DEEPSEEK_API_KEY, "
-                "DEEPSEEK_BASE_URL and DEEPSEEK_MODEL."
+                "OpenAI-compatible LLM is not configured. Set LLM_API_KEY, "
+                "LLM_BASE_URL and LLM_MODEL."
             )
 
         payload: dict[str, Any] = {
-            "model": self.settings.deepseek_model,
+            "model": self.settings.llm_model,
             "messages": [message.to_openai() for message in messages],
         }
         if tools:
@@ -54,7 +54,10 @@ class LLMClient:
         return await asyncio.to_thread(self._post_chat_completions, payload)
 
     def _post_chat_completions(self, payload: dict[str, Any]) -> LLMResponse:
-        url = self.settings.deepseek_base_url.rstrip("/")
+        if not self.is_configured:
+            raise LLMConfigurationError("OpenAI-compatible LLM is not configured.")
+
+        url = self.settings.llm_base_url.rstrip("/")
         if not url.endswith("/chat/completions"):
             url = f"{url}/chat/completions"
 
@@ -63,14 +66,24 @@ class LLMClient:
             method="POST",
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers={
-                "Authorization": f"Bearer {self.settings.deepseek_api_key}",
+                "Authorization": f"Bearer {self.settings.llm_api_key}",
                 "Content-Type": "application/json",
             },
         )
 
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                raw = json.loads(response.read().decode("utf-8"))
+                body = response.read().decode("utf-8", errors="replace")
+                try:
+                    raw = json.loads(body)
+                except json.JSONDecodeError as exc:
+                    status = response_status(response)
+                    content_type = response.headers.get("Content-Type", "-")
+                    preview = body.strip()[:500] or "<empty response body>"
+                    raise RuntimeError(
+                        "LLM response was not valid JSON: "
+                        f"status={status}, content_type={content_type}, body_preview={preview}"
+                    ) from exc
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"LLM request failed with HTTP {exc.code}: {body}") from exc
@@ -84,3 +97,13 @@ class LLMClient:
             tool_calls=message.get("tool_calls") or [],
             raw=raw,
         )
+
+
+def response_status(response: Any) -> str:
+    status = getattr(response, "status", None)
+    if status is not None:
+        return str(status)
+    getcode = getattr(response, "getcode", None)
+    if callable(getcode):
+        return str(getcode())
+    return "-"

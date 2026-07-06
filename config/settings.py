@@ -27,9 +27,9 @@ def load_dotenv(path: Path | None = None) -> None:
 @dataclass(frozen=True)
 class Settings:
     log_level: str
-    deepseek_api_key: str
-    deepseek_base_url: str
-    deepseek_model: str
+    llm_api_key: str
+    llm_base_url: str
+    llm_model: str
     amap_mcp_mode: str
     amap_mcp_url: str
     amap_maps_api_key: str
@@ -47,7 +47,7 @@ class Settings:
 
     @property
     def llm_configured(self) -> bool:
-        return bool(self.deepseek_api_key and self.deepseek_base_url and self.deepseek_model)
+        return bool(self.llm_api_key and self.llm_base_url and self.llm_model)
 
     @property
     def amap_mcp_endpoint(self) -> str:
@@ -74,9 +74,9 @@ def get_settings() -> Settings:
     load_dotenv()
     return Settings(
         log_level=os.getenv("LOG_LEVEL", "INFO"),
-        deepseek_api_key=os.getenv("DEEPSEEK_API_KEY", ""),
-        deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", ""),
-        deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+        llm_api_key=os.getenv("LLM_API_KEY", ""),
+        llm_base_url=os.getenv("LLM_BASE_URL", ""),
+        llm_model=os.getenv("LLM_MODEL", "deepseek-v4-flash"),
         amap_mcp_mode=os.getenv("AMAP_MCP_MODE", "disabled"),
         amap_mcp_url=os.getenv("AMAP_MCP_URL", ""),
         amap_maps_api_key=os.getenv("AMAP_MAPS_API_KEY", ""),

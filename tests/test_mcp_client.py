@@ -13,9 +13,9 @@ class MCPClientTest(unittest.TestCase):
         async def run_case() -> list[dict]:
             settings = Settings(
                 log_level="INFO",
-                deepseek_api_key="",
-                deepseek_base_url="",
-                deepseek_model="deepseek-v4",
+                llm_api_key="",
+                llm_base_url="",
+                llm_model="test-model",
                 amap_mcp_mode="disabled",
                 amap_mcp_url="",
                 amap_maps_api_key="",
@@ -30,9 +30,9 @@ class MCPClientTest(unittest.TestCase):
     def test_amap_key_is_added_to_streamable_http_url(self) -> None:
         settings = Settings(
             log_level="INFO",
-            deepseek_api_key="",
-            deepseek_base_url="",
-            deepseek_model="deepseek-v4",
+            llm_api_key="",
+            llm_base_url="",
+            llm_model="test-model",
             amap_mcp_mode="streamable_http",
             amap_mcp_url="https://mcp.amap.com/mcp",
             amap_maps_api_key="test-key",
@@ -44,9 +44,9 @@ class MCPClientTest(unittest.TestCase):
     def test_decode_sse_json_rpc_response(self) -> None:
         settings = Settings(
             log_level="INFO",
-            deepseek_api_key="",
-            deepseek_base_url="",
-            deepseek_model="deepseek-v4",
+            llm_api_key="",
+            llm_base_url="",
+            llm_model="test-model",
             amap_mcp_mode="disabled",
             amap_mcp_url="",
             amap_maps_api_key="",
@@ -101,9 +101,9 @@ class MCPClientTest(unittest.TestCase):
         async def run_case() -> tuple[int, dict]:
             settings = Settings(
                 log_level="INFO",
-                deepseek_api_key="",
-                deepseek_base_url="",
-                deepseek_model="deepseek-v4",
+                llm_api_key="",
+                llm_base_url="",
+                llm_model="test-model",
                 amap_mcp_mode="streamable_http",
                 amap_mcp_url="https://mcp.amap.com/mcp",
                 amap_maps_api_key="test-key",

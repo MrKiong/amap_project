@@ -36,7 +36,7 @@ class AgentLoop:
         logger.info("AgentLoop run start: agent=%s", self.agent.name)
         if not self.llm_client.is_configured:
             logger.info("AgentLoop LLM not configured; skipped agent context and MCP lookup")
-            return "当前 LLM 未配置，无法生成餐饮推荐。请先配置 DEEPSEEK_API_KEY、DEEPSEEK_BASE_URL 和 DEEPSEEK_MODEL。"
+            return "当前 LLM 未配置，无法生成餐饮推荐。请先配置 LLM_API_KEY、LLM_BASE_URL 和 LLM_MODEL。"
 
         started = time.perf_counter()
         context = await self.agent.build_context(user_input)
@@ -114,7 +114,7 @@ class AgentLoop:
             return await self.agent.fallback_response(user_input, context, tool_results)
         except LLMConfigurationError:
             logger.info("AgentLoop LLM not configured during chat: elapsed_ms=%s", elapsed_ms(run_started))
-            return "当前 LLM 未配置，无法生成餐饮推荐。请先配置 DEEPSEEK_API_KEY、DEEPSEEK_BASE_URL 和 DEEPSEEK_MODEL。"
+            return "当前 LLM 未配置，无法生成餐饮推荐。请先配置 LLM_API_KEY、LLM_BASE_URL 和 LLM_MODEL。"
         except RuntimeError as exc:
             logger.info("AgentLoop LLM failed; no rule fallback: elapsed_ms=%s error=%s", elapsed_ms(run_started), exc)
             tool_results = await self._fallback_tool_results(context)

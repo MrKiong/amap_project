@@ -4,12 +4,34 @@ setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
 
-if "%~1"=="" (
-    set "AMAP_PROJECT_COMMAND=chat"
-) else (
+if not "%~1"=="" (
     set "AMAP_PROJECT_COMMAND=%*"
+    goto run_command
 )
 
+:menu
+echo.
+echo Select startup mode:
+echo 1. CLI chat
+echo 2. Web server
+echo.
+set /p "AMAP_PROJECT_CHOICE=Enter 1 or 2: "
+
+if "%AMAP_PROJECT_CHOICE%"=="1" (
+    set "AMAP_PROJECT_COMMAND=chat"
+    goto run_command
+)
+
+if "%AMAP_PROJECT_CHOICE%"=="2" (
+    set "AMAP_PROJECT_COMMAND=web"
+    goto run_command
+)
+
+echo.
+echo Invalid choice. Please enter 1 or 2.
+goto menu
+
+:run_command
 if exist ".venv\Scripts\python.exe" (
     ".venv\Scripts\python.exe" main.py %AMAP_PROJECT_COMMAND%
     goto done
